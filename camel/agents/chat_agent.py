@@ -4036,7 +4036,11 @@ class ChatAgent(BaseAgent):
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name  # type: ignore[union-attr]
                 tool_call_id = tool_call.id
-                args = json.loads(tool_call.function.arguments)  # type: ignore[union-attr]
+                try:
+                    args = json.loads(tool_call.function.arguments)  # type: ignore[union-attr]
+                except json.JSONDecodeError:
+                    # `arguments` may be empty or truncated on the wire.
+                    args = {}
                 extra_content = getattr(tool_call, 'extra_content', None)
 
                 tool_call_request = ToolCallRequest(

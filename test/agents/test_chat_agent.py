@@ -44,6 +44,7 @@ from camel.models import (
     BaseModelBackend,
     ModelFactory,
     OpenAIModel,
+    StubModel,
 )
 from camel.terminators import ResponseWordsTerminator
 from camel.toolkits import (
@@ -2371,3 +2372,72 @@ def test_rate_limit_retry_respects_anthropic_error_when_installed():
         from openai import RateLimitError as OpenAIRateLimitError
 
         assert _RATE_LIMIT_ERRORS == (OpenAIRateLimitError,)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    ["", '{"city": "San Fra'],
+    ids=["empty", "truncated"],
+)
+def test_chat_agent_step_tolerates_unparsable_tool_arguments(arguments):
+    r"""A tool call whose `arguments` string is not valid JSON is executed.
+
+    OpenAI-compatible servers (vLLM, Ollama, Together, ...) send
+    `arguments: ""` for zero-argument tools, and arguments can be truncated
+    on the wire. The streaming path tolerates both, so the non-streaming path
+    must not let a JSONDecodeError escape ChatAgent.step().
+    """
+
+    def ping() -> str:
+        r"""A zero-argument tool."""
+        return "pong"
+
+    model_backend_rsp_tool = ChatCompletion(
+        id='mock_id_123456',
+        choices=[
+            Choice(
+                finish_reason='tool_calls',
+                index=0,
+                logprobs=None,
+                message=ChatCompletionMessage(
+                    content=None,
+                    role='assistant',
+                    tool_calls=[
+                        ChatCompletionMessageFunctionToolCall(
+                            id='call_mock_123456',
+                            function=Function(
+                                arguments=arguments,
+                                name='ping',
+                            ),
+                            type='function',
+                        ),
+                    ],
+                ),
+            )
+        ],
+        created=1730752528,
+        model='stub',
+        object='chat.completion',
+        usage=CompletionUsage(
+            completion_tokens=5,
+            prompt_tokens=10,
+            total_tokens=15,
+        ),
+    )
+
+    model = StubModel(ModelType.STUB, model_config_dict={"stream": False})
+    agent = ChatAgent(
+        system_message="You are a help assistant.",
+        model=model,
+        tools=[ping],
+        max_iteration=1,
+    )
+    agent.model_backend.run = MagicMock(return_value=model_backend_rsp_tool)
+
+    response = agent.step("Ping the tool.")
+
+    tool_calls = response.info['tool_calls']
+    assert len(tool_calls) == 1
+    assert tool_calls[0].tool_name == 'ping'
+    assert tool_calls[0].args == {}
+    assert tool_calls[0].result == 'pong'
