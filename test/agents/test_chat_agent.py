@@ -2376,16 +2376,18 @@ def test_rate_limit_retry_respects_anthropic_error_when_installed():
 
 @pytest.mark.parametrize(
     "arguments",
-    ["", '{"city": "San Fra'],
-    ids=["empty", "truncated"],
+    ["", '{"city": "San Fra', "null", "[]", "123", '"ping"'],
+    ids=["empty", "truncated", "null", "list", "number", "string"],
 )
-def test_chat_agent_step_tolerates_unparsable_tool_arguments(arguments):
-    r"""A tool call whose `arguments` string is not valid JSON is executed.
+def test_chat_agent_step_tolerates_unusable_tool_arguments(arguments):
+    r"""A tool call whose `arguments` string cannot fill `args` is executed.
 
     OpenAI-compatible servers (vLLM, Ollama, Together, ...) send
     `arguments: ""` for zero-argument tools, and arguments can be truncated
-    on the wire. The streaming path tolerates both, so the non-streaming path
-    must not let a JSONDecodeError escape ChatAgent.step().
+    on the wire. A payload may also be well-formed JSON that is not an
+    object (`null`, `[]`, a bare scalar), which `ToolCallRequest.args` cannot
+    hold either. The streaming path lets none of them escape, so the
+    non-streaming path must not either.
     """
 
     def ping() -> str:

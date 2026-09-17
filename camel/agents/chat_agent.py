@@ -4041,6 +4041,11 @@ class ChatAgent(BaseAgent):
                 except json.JSONDecodeError:
                     # `arguments` may be empty or truncated on the wire.
                     args = {}
+                if not isinstance(args, dict):
+                    # `arguments` may also be valid JSON that is not an
+                    # object (`null`, `[]`, a bare scalar), which `args`
+                    # cannot hold any more than a malformed payload.
+                    args = {}
                 extra_content = getattr(tool_call, 'extra_content', None)
 
                 tool_call_request = ToolCallRequest(
